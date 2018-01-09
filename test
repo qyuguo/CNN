@@ -1,0 +1,143 @@
+/***************
+******Q1************/
+/*******1**************/
+
+proc sort data = data1; by loanpool; run;
+proc sort data = data2; by loanpool; run;
+data dataQ1_1;
+    merge data1 data2;
+    by loanpool;
+run;
+
+/*2*/
+
+data data3_reform;
+    set data3;
+    format time MMDDYY10.;
+run;
+proc sort data = data3_reform; by time; run;
+proc sort data = dataQ1_1; by time; run;
+data dataQ1_2;
+    merge dataQ1_1 data3_reform;
+    by time;
+run;
+
+/*3*/
+proc means data = dataQ1_2 N Nmiss min max; run;
+
+/*Yes. Default_rate has 2 missing values.*/
+
+data dataQ1_3; 
+    set dataQ1_2; 
+    where default_rate = .;
+run;
+
+/*4*/
+
+proc univariate data=dataQ1_2;
+    var default_rate;
+    qqplot default_rate;
+run;
+data dataQ1_4;
+    set dataQ1_2;
+    where default_rate>1;
+run;
+
+/*5*/
+proc sort data =  dataQ1_2; by loanpool time; run;
+data dataQ1_quarter;
+    set dataQ1_2;
+    format end_quarter MMDDYY10.;
+    end_quarter = intnx('qtr', time, +0,'end');
+run;
+/*full dataset*/
+proc sql;
+    create table dataQ1_5 as 
+    select loanpool, time, mean(fico) as fico_qrt, mean(default_rate) as default_rate_qrt, mean(ur) as ur_qrt,
+    mean(income_yoy) as income_yoy_qrt,  *
+    from dataQ1_quarter
+    group by loanpool, end_quarter;
+quit;
+
+/*only quarter dataset*/
+proc sql;
+    create table dataQ1_5_2 as 
+    select  loanpool, end_quarter, mean(fico) as fico_qrt, mean(default_rate) as default_rate_qrt, mean(ur) as ur_qrt,
+    mean(income_yoy) as income_yoy_qrt
+    from dataQ1_quarter
+    group by loanpool, end_quarter;
+quit;
+
+
+
+/*Q2*/
+
+/*1*/
+
+proc sql;
+    create table dataQ2_1 as 
+    select *, (time- min(time) ) as AGE   /*add one for the begining year*/
+    from data4
+    group by account_id;
+quit;
+
+proc sql ;
+    select max(age)
+    from dataQ2_1
+    where default_rate~=.;
+quit;  /*8/
+
+/*2*/
+proc means data=dataQ2_1 N Nmiss mean median std  ; var default_rate; class account_id; run;
+
+/*3*/
+
+proc sql;
+    create table dataQ2_3 as 
+    select distinct age,mean(default_rate) as lifecycle
+    from dataQ2_1
+    group by age;
+quit;
+symbol interpol=join 
+        value=dot;
+proc gplot data=dataQ2_3;
+    plot lifecycle * age ;
+    title "portfolio's lifecycle plot";
+run;
+
+/*4*/
+proc sort data=dataQ2_1;by account_id age;run;
+/*we select account_id=400293, and 400564*/
+
+proc gplot data=dataQ2_1;
+    plot default_rate * age ;
+    where account_id=400293;
+    title "portfolio's lifecycle plot account_id=400293";
+run;
+
+proc gplot data=dataQ2_1;
+    plot default_rate * age ;
+    where account_id=400564;
+    title "portfolio's lifecycle plot account_id=400293";
+run;
+
+    
+
+/*5.a*/
+/*an easy fit*/
+
+ods graphics on;
+
+proc reg  data=dataQ2_1 outest=estout;
+    model default_rate = age  r12_gdp_bl;
+run;
+ods graphics off;
+
+
+/*5.b*/
+proc forecast data=dataQ2_1 lead=1
+    out=pred_Q2_5 outfull;
+    id age r12_gdp_bl;
+    var default_rate;
+run;
+    
